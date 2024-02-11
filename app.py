@@ -62,7 +62,7 @@ def create_app():
     # Define endpoint to save email
     @app.route('/save_emails', methods=['POST'])
     def save_emails():
-        data = request.form
+        data = request.json
         event_id = data.get('event_id')
         email_subject = data.get('email_subject')
         email_content = data.get('email_content')
