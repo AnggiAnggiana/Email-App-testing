@@ -3,7 +3,7 @@ import os
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from config import DATABASE_CONFIG
-from models import Email, User, db
+from models import Email, User, db, Scheduled_Email
 from datetime import datetime
 
 from flask_wtf import FlaskForm
@@ -49,9 +49,10 @@ def create_app():
         # Get data from database
         emails = Email.query.all()
         users = User.query.all()
+        scheduled_emails = Scheduled_Email.query.all()
         form = SendEmailForm()
         
-        return render_template('view_emails.html', emails=emails, users=users, form=form, show_send_email_form=True)
+        return render_template('view_emails.html', emails=emails, users=users, scheduled_emails=scheduled_emails, form=form, show_send_email_form=True)
     
     # Route for add new email data
     @app.route('/add_emails', methods=['GET'])
@@ -126,10 +127,43 @@ def create_app():
         email = Email.query.get(email_id)
         user = User.query.get(user_id)
         
-        # Send email used Celery Task
-        send_emails.apply_async((email_id, user_id), countdown=10)
+        email.sent = True
+        db.session.commit()
+        
+        scheduled_email = Scheduled_Email(email=email, recipient=user, status='Already Scheduled sent to recipient')
+        db.session.add(scheduled_email)
+        db.session.commit()
         
         return redirect(url_for('view_emails'))
+    
+    # Define endpoint to delete user
+    @app.route('/delete_user', methods=['POST'])
+    def delete_user():
+        data = request.json
+        user_id = data.get('user_id')
+        
+        user = User.query.get(user_id)
+        if user:
+            db.session.delete(user)
+            db.session.commit()
+            return jsonify({"messages": "User successfully deleted"}), 200
+        else:
+            return jsonify({"error": "User not found and failed to delete"}), 404
+        
+    # Define endpoint to delete email
+    @app.route('/delete_email', methods=['POST'])
+    def delete_email():
+        data = request.json
+        email_id = data.get('email_id')
+        
+        email = Email.query.get(email_id)
+        if email:
+            db.session.delete(email)
+            db.session.commit()
+            return jsonify({"messages": "Email successfully deleted"}), 200
+        else:
+            return jsonify({"error": "Email not found and failed to delete"}), 404
+        
     
     return app
 

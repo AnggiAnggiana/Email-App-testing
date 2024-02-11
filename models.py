@@ -21,3 +21,12 @@ class User(db.Model):
     
     def __repr__(self):
         return f"<User {self.id} - {self.fullname}"
+    
+class Scheduled_Email(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email_id = db.Column(db.Integer, db.ForeignKey('email.id'))
+    recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    status = db.Column(db.String(50), default='')
+    
+    email = db.relationship('Email', backref='scheduled_emails')
+    recipient = db.relationship('User', backref='scheduled_emails')
