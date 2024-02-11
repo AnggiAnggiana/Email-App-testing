@@ -1,22 +1,22 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template, redirect, url_for
 import os
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from config import DATABASE_CONFIG
-from models import Email, User
-# from email_sender import send_custom_email
-
-from flask import render_template
+from models import Email, User, db
 from datetime import datetime
 
+from flask_wtf import FlaskForm
+from wtforms import SelectField
+from wtforms.validators import DataRequired
 
+from celery_config import make_celery
 
-# Initiate SQAlchemy
-db = SQLAlchemy()
 
 # Configure Flask app
 def create_app():
     app = Flask(__name__)
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 
     # configure database from environment variables
     app.config['SQLALCHEMY_DATABASE_URI'] = f"{DATABASE_CONFIG['DRIVER']}://{DATABASE_CONFIG['USER']}:{DATABASE_CONFIG['PASSWORD']}@{DATABASE_CONFIG['HOST']}/{DATABASE_CONFIG['DATABASE']}"
@@ -26,10 +26,32 @@ def create_app():
     db.init_app(app)
     migrate = Migrate(app, db)
     
+    # Initiate Celery in app
+    
+    global celery
+    celery = make_celery(app)
+    
+    # Form to select email and user when sending email
+    class SendEmailForm(FlaskForm):
+        email = SelectField('Email', validators=[DataRequired()])
+        user = SelectField('User', validators=[DataRequired()])
+        
+    # Task to send emails based on timestamp
+    @celery.task
+    def send_emails():
+        emails = Email.query.filter(Email.timestamp <= datetime.now()).all()
+        for email in emails:
+            user = User.query.get(email.recipient_id)
+    
     # Route for URL show email datas in database
     @app.route('/')
     def view_emails():
-        return render_template('view_emails.html')
+        # Get data from database
+        emails = Email.query.all()
+        users = User.query.all()
+        form = SendEmailForm()
+        
+        return render_template('view_emails.html', emails=emails, users=users, form=form, show_send_email_form=True)
     
     # Route for add new email data
     @app.route('/add_emails', methods=['GET'])
@@ -94,6 +116,20 @@ def create_app():
         }
         
         return jsonify({"message": "User successfully added", "user": User_data}), 201
+    
+    # For send email to the user/recipient
+    @app.route('/send_email', methods=['POST'])
+    def send_email():
+        email_id = request.form.get('email_id')
+        user_id = request.form.get('user_id')
+        
+        email = Email.query.get(email_id)
+        user = User.query.get(user_id)
+        
+        # Send email used Celery Task
+        send_emails.apply_async((email_id, user_id), countdown=10)
+        
+        return redirect(url_for('view_emails'))
     
     return app
 
